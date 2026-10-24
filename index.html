@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Free classrooms · Stanford</title>
+<style>
+:root{--ground:#faf8f5;--card:#fff;--ink:#1f1b18;--ink-2:#5c544e;--line:#e5dfd8;
+  --accent:#8c1515;--free:#1f7a46;--soon:#9a6400;--busy:#8a817a;
+  --f-ui:system-ui,-apple-system,"Segoe UI",sans-serif}
+@media (prefers-color-scheme:dark){:root{--ground:#161311;--card:#211c19;--ink:#efe9e3;
+  --ink-2:#b0a69d;--line:#352e29;--accent:#e36a63;--free:#5cc48a;--soon:#e0a640;--busy:#8a817a}}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--f-ui);font-size:15px}
+main{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:24px;margin:4px 0 2px}h1 .red{color:var(--accent)}
+.sub{color:var(--ink-2);font-size:13px;margin:0 0 14px}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.controls input,.controls select{font:inherit;padding:7px 9px;border:1px solid var(--line);
+  border-radius:8px;background:var(--card);color:var(--ink)}
+.controls input[type=search]{flex:1;min-width:160px}
+.summary{color:var(--ink-2);font-size:13px;margin:6px 0 10px}
+.bldg{margin:14px 0 4px;font-weight:600;font-size:13px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.03em}
+.bldg .walk{text-transform:none;letter-spacing:0;font-weight:500;margin-left:6px}
+.controls button{font:inherit;padding:7px 11px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);cursor:pointer}
+.controls button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;justify-content:space-between;gap:10px;background:var(--card);border:1px solid var(--line);
+  border-radius:8px;padding:8px 11px;margin:4px 0}
+li .room{font-weight:600}li .what{color:var(--ink-2);font-size:13px;text-align:right}
+li.free .state{color:var(--free)}li.soon .state{color:var(--soon)}li.busy{opacity:.65}li.busy .state{color:var(--busy)}
+.state{font-weight:600;font-size:13px}
+footer{color:var(--ink-2);font-size:12px;margin:22px 0 8px;line-height:1.5}
+</style>
+</head>
+<body>
+<main>
+  <h1>Free <span class="red">classrooms</span></h1>
+  <p class="sub" id="sub">Loading the class schedule…</p>
+  <div class="controls">
+    <input type="search" id="q" placeholder="Building or room (e.g. Thornton, 160)" aria-label="Filter by building or room">
+    <select id="when" aria-label="Time"></select>
+    <select id="show" aria-label="Show">
+      <option value="free">Free now</option>
+      <option value="all">All rooms</option>
+    </select>
+    <button type="button" id="near" aria-pressed="false">Near me</button>
+  </div>
+  <div class="summary" id="summary"></div>
+  <div id="list"></div>
+  <footer>
+    “Free” means no class is scheduled in the room according to
+    <a href="https://explorecourses.stanford.edu/">ExploreCourses</a>. It cannot see exams, events,
+    review sessions, holidays or locked doors, so treat it as a good bet, not a booking.
+    Walking times are straight-line estimates from building centres
+    (© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors);
+    Main Quad rooms share one point.
+  </footer>
+</main>
+<script src="rooms-logic.js"></script>
+<script src="near-logic.js"></script>
+<script>
+(async function () {
+  const $ = (id) => document.getElementById(id);
+  let data;
+  try {
+    data = await (await fetch("data/meetings.json", { cache: "no-cache" })).json();
+  } catch (e) {
+    $("sub").textContent = "Could not load the schedule. Try reloading.";
+    return;
+  }
+  // ?at=2026-10-27T11:00 pins "now" to a campus time: for planning ahead, and for tests.
+  const pin = new URLSearchParams(location.search).get("at");
+  const base = pin ? new Date(`${pin}:00${new Date(`${pin}:00Z`).getTime() >= Date.UTC(2026, 10, 1, 9) && new Date(`${pin}:00Z`).getTime() < Date.UTC(2027, 2, 14, 10) ? "-08:00" : "-07:00"}`) : null;
+  const clock = () => base || new Date();
+  // Time choices: now, then every half hour from the next one to 10 pm today.
+  const now = clock();
+  const opts = [["now", "Right now"]];
+  const c = RoomsLogic.campusNow(now);
+  for (let m = Math.ceil((c.min + 1) / 30) * 30; m <= 22 * 60; m += 30) {
+    const hh = String(Math.floor(m / 60)).padStart(2, "0"), mm = String(m % 60).padStart(2, "0");
+    opts.push([String(m), "At " + RoomsLogic.untilLabel(`${hh}:${mm}`).replace("until ", "")]);
+  }
+  $("when").innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
+
+  // Near me: one tap asks for location; nothing is asked on load. ?near=lat,lon pins it for tests.
+  let places = {}, here = null;
+  fetch("data/places.json").then((r) => r.json()).then((d) => { places = d.places; if (here) render(); }).catch(() => {});
+  const pinNear = new URLSearchParams(location.search).get("near");
+  if (pinNear) { here = pinNear.split(",").map(Number); $("near").setAttribute("aria-pressed", "true"); }
+  let nearNote = "";
+  $("near").addEventListener("click", () => {
+    if (here) { here = null; nearNote = ""; $("near").setAttribute("aria-pressed", "false"); render(); return; }
+    if (!navigator.geolocation) { nearNote = "This browser can't share a location."; render(); return; }
+    $("near").textContent = "Locating…";
+    navigator.geolocation.getCurrentPosition((p) => {
+      here = [p.coords.latitude, p.coords.longitude]; nearNote = "";
+      $("near").textContent = "Near me"; $("near").setAttribute("aria-pressed", "true"); render();
+    }, () => {
+      $("near").textContent = "Near me"; nearNote = "Location is off, so rooms stay sorted by free count."; render();
+    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
+  });
+
+  // "Monday, January 5" from an ISO date — built at noon UTC so no zone shifts the day.
+  const dayLabel = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
+
+  const esc = (s) => s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+
+  function render() {
+    const w = $("when").value;
+    const t = clock(), c = RoomsLogic.campusNow(t);
+    const at = w === "now" ? t : new Date(t.getTime() + (Number(w) - c.min) * 60000);
+    const weekend = c.day === "Saturday" || c.day === "Sunday";
+    // Which term's classes meet today. The file carries this term and the next, so the
+    // page rolls over on its own the day one term's classes end.
+    const T = RoomsLogic.pickTerm(data, t);
+    $("sub").textContent = `${T.term} schedule · ${new Set(T.meetings.map((m) => m.room).filter(RoomsLogic.isRoom)).size} rooms`;
+    const off = RoomsLogic.noClassDay(T.noClass, t);
+    if (T.state === "after") {
+      $("summary").textContent = `${T.term} classes are over, and this schedule is out of date. Rooms may be in use for exams or a new term.`;
+      $("list").innerHTML = "";
+      return;
+    }
+    if (T.state === "between") {
+      $("summary").textContent = `${T.term} classes start ${dayLabel(T.starts || T.first)}. Between terms no classes are scheduled, so every room would show free — and most buildings are locked.`;
+      $("list").innerHTML = "";
+      return;
+    }
+    const q = $("q").value.trim().toLowerCase();
+    let rows = RoomsLogic.status(T.meetings, at, T.noClass);
+    const counts = { free: 0, soon: 0, busy: 0 };
+    rows.forEach((r) => counts[r.state]++);
+    if (q) rows = rows.filter((r) => r.room.toLowerCase().includes(q));
+    if ($("show").value === "free") rows = rows.filter((r) => r.state !== "busy");
+    $("summary").textContent = `${counts.free} free, ${counts.soon} with a class soon, ${counts.busy} in use` +
+      (q || $("show").value === "free" ? ` · showing ${rows.length}` : "") +
+      (off ? `. No classes today (${off}, per the registrar), so every room shows free; many buildings may be locked.`
+        : weekend ? ". No classes meet on weekends, so almost everything shows free; many buildings may be locked." : "");
+    const byB = new Map();
+    for (const r of rows) { if (!byB.has(r.building)) byB.set(r.building, []); byB.get(r.building).push(r); }
+    // Buildings with the most free rooms first; with Near me on, nearest first.
+    let blds = [...byB].sort((a, b) => b[1].filter((r) => r.state === "free").length - a[1].filter((r) => r.state === "free").length || a[0].localeCompare(b[0]));
+    blds = here ? NearLogic.order(blds, places, here) : blds.map(([b, rs]) => [b, rs, null]);
+    if (nearNote) $("summary").textContent += ` · ${nearNote}`;
+    const walk = (b, m) => {
+      if (!here) return "";
+      if (m === null) return `<span class="walk">· location unknown</span>`;
+      const quad = places[b][2] ? ` (${esc(places[b][2])})` : "";
+      return `<span class="walk">· ${NearLogic.label(m)}${quad}</span>`;
+    };
+    $("list").innerHTML = blds.map(([b, rs, m]) => `<div class="bldg">${esc(b)}${walk(b, m)}</div><ul>` + rs.map((r) => {
+      const state = r.state === "busy" ? `In use ${RoomsLogic.untilLabel(r.until)}` : `Free ${RoomsLogic.untilLabel(r.until)}`;
+      const what = r.state === "busy" ? esc(r.course) : r.course ? `then ${esc(r.course)}` : "";
+      return `<li class="${r.state}"><span><span class="room">${esc(r.room)}</span><br><span class="state">${state}</span></span><span class="what">${what}</span></li>`;
+    }).join("") + "</ul>").join("") || `<p class="summary">No rooms match.</p>`;
+  }
+  ["q", "when", "show"].forEach((id) => $(id).addEventListener("input", render));
+  render();
+  setInterval(() => { if ($("when").value === "now") render(); }, 60000);
+})();
+</script>
+</body>
+</html>
