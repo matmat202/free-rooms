@@ -43,6 +43,7 @@ li .room{font-weight:600}li .what{color:var(--ink-2);font-size:13px;text-align:r
 li.free .state{color:var(--free)}li.soon .state{color:var(--soon)}li.busy{opacity:.65}li.busy .state{color:var(--busy)}
 .state{font-weight:600;font-size:13px}
 footer{color:var(--ink-2);font-size:12px;margin:22px 0 8px;line-height:1.5}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 </style>
 </head>
 <body>
@@ -59,6 +60,7 @@ footer{color:var(--ink-2);font-size:12px;margin:22px 0 8px;line-height:1.5}
     <button type="button" id="near" aria-pressed="false">Near me</button>
   </div>
   <div class="summary" id="summary"></div>
+  <div class="sr-only" id="said" role="status"></div>
   <div id="list"></div>
   <footer>
     “Free” means no class is scheduled in the room according to
@@ -102,14 +104,14 @@ footer{color:var(--ink-2);font-size:12px;margin:22px 0 8px;line-height:1.5}
   if (pinNear) { here = pinNear.split(",").map(Number); $("near").setAttribute("aria-pressed", "true"); }
   let nearNote = "";
   $("near").addEventListener("click", () => {
-    if (here) { here = null; nearNote = ""; $("near").setAttribute("aria-pressed", "false"); render(); return; }
-    if (!navigator.geolocation) { nearNote = "This browser can't share a location."; render(); return; }
+    if (here) { here = null; nearNote = ""; $("near").setAttribute("aria-pressed", "false"); render(true); return; }
+    if (!navigator.geolocation) { nearNote = "This browser can't share a location."; render(true); return; }
     $("near").textContent = "Locating…";
     navigator.geolocation.getCurrentPosition((p) => {
       here = [p.coords.latitude, p.coords.longitude]; nearNote = "";
-      $("near").textContent = "Near me"; $("near").setAttribute("aria-pressed", "true"); render();
+      $("near").textContent = "Near me"; $("near").setAttribute("aria-pressed", "true"); render(true);
     }, () => {
-      $("near").textContent = "Near me"; nearNote = "Location is off, so rooms stay sorted by free count."; render();
+      $("near").textContent = "Near me"; nearNote = "Location is off, so rooms stay sorted by free count."; render(true);
     }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
   });
 
@@ -118,7 +120,15 @@ footer{color:var(--ink-2);font-size:12px;margin:22px 0 8px;line-height:1.5}
 
   const esc = (s) => s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
 
-  function render() {
+  // A screen reader hears nothing when the list redraws, so a change the reader asked for
+  // (search, time, filter, Near me) also goes to a polite live region. The minute timer
+  // does not announce: a count ticking every few minutes would talk over the list
+  // (AX-tree probe of the live page, 2026-10-26: no live region at all).
+  const render = (announce) => {
+    draw();
+    if (announce && $("said").textContent !== $("summary").textContent) $("said").textContent = $("summary").textContent;
+  };
+  function draw() {
     const w = $("when").value;
     const t = clock(), c = RoomsLogic.campusNow(t);
     const at = w === "now" ? t : new Date(t.getTime() + (Number(w) - c.min) * 60000);
@@ -163,13 +173,13 @@ footer{color:var(--ink-2);font-size:12px;margin:22px 0 8px;line-height:1.5}
       const quad = places[b][2] ? ` (${esc(places[b][2])})` : "";
       return `<span class="walk">· ${NearLogic.label(m)}${quad}</span>`;
     };
-    $("list").innerHTML = blds.map(([b, rs, m]) => `<div class="bldg">${esc(b)}${walk(b, m)}</div><ul>` + rs.map((r) => {
+    $("list").innerHTML = blds.map(([b, rs, m]) => `<div class="bldg" role="heading" aria-level="2">${esc(b)}${walk(b, m)}</div><ul>` + rs.map((r) => {
       const state = r.state === "busy" ? `In use ${RoomsLogic.untilLabel(r.until)}` : `Free ${RoomsLogic.untilLabel(r.until)}`;
       const what = r.state === "busy" ? esc(r.course) : r.course ? `then ${esc(r.course)}` : "";
       return `<li class="${r.state}"><span><span class="room">${esc(r.room)}</span><br><span class="state">${state}</span></span><span class="what">${what}</span></li>`;
     }).join("") + "</ul>").join("") || `<p class="summary">No rooms match.</p>`;
   }
-  ["q", "when", "show"].forEach((id) => $(id).addEventListener("input", render));
+  ["q", "when", "show"].forEach((id) => $(id).addEventListener("input", () => render(true)));
   render();
   setInterval(() => { if ($("when").value === "now") render(); }, 60000);
 })();
