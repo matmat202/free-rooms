@@ -147,7 +147,10 @@ footer{color:var(--ink-2);font-size:12px;margin:22px 0 8px;line-height:1.5}
     $("summary").textContent = `${counts.free} free, ${counts.soon} with a class soon, ${counts.busy} in use` +
       (q || $("show").value === "free" ? ` · showing ${rows.length}` : "") +
       (off ? `. No classes today (${off}, per the registrar), so every room shows free; many buildings may be locked.`
-        : weekend ? ". No classes meet on weekends, so almost everything shows free; many buildings may be locked." : "");
+        : weekend ? ". No classes meet on weekends, so almost everything shows free; many buildings may be locked."
+        // a class day after its last class read "346 free" with no caveat at 11 pm (live audit, 2026-10-26)
+        : !counts.busy && !counts.soon && (w === "now" ? c.min : Number(w)) >= 18 * 60
+          ? ". Classes are over for today, so every room shows free; many buildings may be locked at night." : "");
     const byB = new Map();
     for (const r of rows) { if (!byB.has(r.building)) byB.set(r.building, []); byB.get(r.building).push(r); }
     // Buildings with the most free rooms first; with Near me on, nearest first.
