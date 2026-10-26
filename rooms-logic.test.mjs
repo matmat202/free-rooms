@@ -132,5 +132,144 @@ check('a single-term file still reads, range derived from its meetings', R.pickT
 check('a single-term file IS stale in the next quarter (what terms[] fixes)', R.pickTerm(oneTerm, new Date('2027-02-01T11:00:00-08:00')).state === 'after');
 check('two terms are NOT stale on that same day', on('2027-02-01').state === 'in');
 
+/* Gaps bin/mutate found on 2026-10-26 (rooms-logic was 59/89, the weakest suite on
+ * either site). Each block below turns a specific survivor red. */
+
+console.log('\n9. the dates a meeting series actually runs');
+// `if ((m.from && now.date < m.from) || (m.to && now.date > m.to)) continue;` — both
+// comparisons were unpinned, and loosening either drops a meeting that IS meeting,
+// which shows an occupied room as free. That is the worst answer this page can give.
+const B = [
+  mt('Thornton 101', ['Tuesday'], '10:00', '11:00', 'STARTS 1', '2026-10-27', '2026-12-04'),
+  mt('Thornton 102', ['Tuesday'], '10:00', '11:00', 'ENDS 1', '2026-09-22', '2026-10-27'),
+  mt('Thornton 103', ['Tuesday'], '10:00', '11:00', 'NOTYET 1', '2026-10-28', '2026-12-04'),
+  mt('Thornton 104', ['Tuesday'], '10:00', '11:00', 'OVER 1', '2026-09-22', '2026-10-26'),
+];
+s = R.status(B, at('10:30'));
+check('a series counts on its FIRST date', row(s, 'Thornton 101').state === 'busy', row(s, 'Thornton 101').state);
+check('a series counts on its LAST date', row(s, 'Thornton 102').state === 'busy', row(s, 'Thornton 102').state);
+check('a series that starts tomorrow does not count today', row(s, 'Thornton 103').state === 'free', row(s, 'Thornton 103').state);
+check('a series that ended yesterday does not count today', row(s, 'Thornton 104').state === 'free', row(s, 'Thornton 104').state);
+
+console.log('\n10. the SOON cutoff is exactly 30 minutes');
+// SOON = 30 and `next.s - now.min < SOON` were both unpinned, so the threshold could
+// move a minute either way unnoticed.
+const S1 = [mt('Thornton 201', ['Tuesday'], '12:00', '12:50', 'SOON 1')];
+check('29 minutes out is "soon"', row(R.status(S1, at('11:31')), 'Thornton 201').state === 'soon');
+check('exactly 30 minutes out is still "free"', row(R.status(S1, at('11:30')), 'Thornton 201').state === 'free',
+  row(R.status(S1, at('11:30')), 'Thornton 201').state);
+check('31 minutes out is "free"', row(R.status(S1, at('11:29')), 'Thornton 201').state === 'free');
+
+console.log('\n11. the order the list is read in');
+// rank{free,soon,busy}, the until-key, its busy/free direction and the room-name
+// tiebreak were all unpinned. Three rooms per rank, handed in the wrong order, because
+// V8 compares a single pair for a 2-element array and a broken comparator survives that.
+const O = [
+  mt('Zed 300', ['Tuesday'], '09:00', '13:00', 'BUSY LATE'),    // busy until 13:00
+  mt('Alpha 100', ['Tuesday'], '09:00', '12:10', 'BUSY SOON'),  // busy until 12:10
+  // (not 12:00: the end is exclusive, so a class ending at 12:00 leaves the room FREE
+  //  at 12:00 — the first draft of this fixture got that wrong and the check caught it)
+  mt('Mid 200', ['Tuesday'], '09:00', '12:30', 'BUSY MID'),     // busy until 12:30
+  mt('Free Short 1', ['Tuesday'], '12:10', '13:00', 'NEXT SOON'),   // soon (10 min)
+  mt('Free Long 1', ['Tuesday'], '16:00', '17:00', 'NEXT LATE'),    // free until 16:00
+  mt('Free Mid 1', ['Tuesday'], '14:00', '15:00', 'NEXT MID'),      // free until 14:00
+  mt('Free All 1', ['Monday'], '09:00', '10:00', 'OTHER DAY'),      // free, no more today
+];
+const ord = R.status(O, at('12:00')).map((r) => r.room);
+check('free before soon before busy',
+  ord.indexOf('Free All 1') < ord.indexOf('Free Short 1')
+  && ord.indexOf('Free Short 1') < ord.indexOf('Alpha 100'), ord.join(' | '));
+check('free rooms are longest-free first, with "no more classes" first of all',
+  ord.indexOf('Free All 1') < ord.indexOf('Free Long 1')
+  && ord.indexOf('Free Long 1') < ord.indexOf('Free Mid 1'), ord.join(' | '));
+check('busy rooms are soonest-free first',
+  ord.indexOf('Alpha 100') < ord.indexOf('Mid 200')
+  && ord.indexOf('Mid 200') < ord.indexOf('Zed 300'), ord.join(' | '));
+const TIE = [
+  mt('Zulu 1', ['Monday'], '09:00', '10:00', 'OFF 1'),
+  mt('Alpha 1', ['Monday'], '09:00', '10:00', 'OFF 2'),
+  mt('Mike 1', ['Monday'], '09:00', '10:00', 'OFF 3'),
+];
+check('rooms that tie on everything sort by name',
+  R.status(TIE, at('12:00')).map((r) => r.room).join() === 'Alpha 1,Mike 1,Zulu 1',
+  R.status(TIE, at('12:00')).map((r) => r.room).join());
+
+console.log('\n12. allMeetings reads either file shape');
+// Exported, and near-logic.test.mjs builds its whole fixture on it, but nothing here
+// asserted it: both halves of `data.terms && data.terms.length` and the `|| []`
+// fallback survived.
+const tA = { term: 'Autumn', meetings: [mt('Thornton 207', ['Tuesday'], '10:30', '11:50', 'A 1')] };
+const tB = { term: 'Winter', meetings: [mt('Lathrop 292', ['Monday'], '09:00', '09:50', 'B 1')] };
+check('a multi-term file returns every term\u2019s meetings',
+  R.allMeetings({ terms: [tA, tB] }).map((m) => m.course).join() === 'A 1,B 1',
+  JSON.stringify(R.allMeetings({ terms: [tA, tB] }).map((m) => m.course)));
+check('a single-term file returns its top-level meetings',
+  R.allMeetings(tA).map((m) => m.course).join() === 'A 1');
+check('an EMPTY terms[] falls back to the top level, not to nothing',
+  R.allMeetings({ terms: [], meetings: tA.meetings }).length === 1,
+  String(R.allMeetings({ terms: [], meetings: tA.meetings }).length));
+check('a term with no meetings key contributes nothing, and does not throw',
+  R.allMeetings({ terms: [{ term: 'Empty' }, tA] }).length === 1);
+check('a file with neither gives an empty list, not undefined',
+  Array.isArray(R.allMeetings({})) && R.allMeetings({}).length === 0);
+
+console.log('\n13. a term range derived when only HALF of it is on file');
+// `if (!first || !last)` and the two `m.from &&` / `m.to &&` guards inside it survived,
+// because every file tested so far had both dates or neither.
+const halfFirst = { terms: [{ term: 'Half', first: '2026-09-22', last: null,
+  meetings: [mt('Thornton 207', ['Tuesday'], '10:30', '11:50', 'H 1', '2026-10-01', '2026-11-30')] }] };
+check('a term with first but no last derives the last from its meetings',
+  R.pickTerm(halfFirst, at('11:00')).last === '2026-11-30', String(R.pickTerm(halfFirst, at('11:00')).last));
+check('and keeps the first it was given, rather than the meetings\u2019',
+  R.pickTerm(halfFirst, at('11:00')).first === '2026-09-22', String(R.pickTerm(halfFirst, at('11:00')).first));
+const halfLast = { terms: [{ term: 'Half', first: null, last: '2026-12-04',
+  meetings: [mt('Thornton 207', ['Tuesday'], '10:30', '11:50', 'H 1', '2026-10-01', '2026-11-30')] }] };
+check('a term with last but no first derives the first from its meetings',
+  R.pickTerm(halfLast, at('11:00')).first === '2026-10-01', String(R.pickTerm(halfLast, at('11:00')).first));
+check('and keeps the last it was given', R.pickTerm(halfLast, at('11:00')).last === '2026-12-04');
+const noDates = { terms: [{ term: 'Bare', meetings: [
+  mt('Thornton 207', ['Tuesday'], '10:30', '11:50', 'N 1', '2026-10-01', '2026-11-30'),
+  { room: 'Lathrop 292', days: ['Monday'], start: '09:00', end: '09:50', course: 'N 2', component: 'LEC' },
+] }] };
+check('meetings with no from/to at all are skipped, not read as empty strings',
+  R.pickTerm(noDates, at('11:00')).first === '2026-10-01'
+  && R.pickTerm(noDates, at('11:00')).last === '2026-11-30',
+  JSON.stringify([R.pickTerm(noDates, at('11:00')).first, R.pickTerm(noDates, at('11:00')).last]));
+
+console.log('\n14. the last three survivors that were real');
+// termOver took the LAST meeting's end rather than the greatest, whenever `m.to &&` was
+// loosened — invisible while every fixture happened to be in date order.
+const outOfOrder = [
+  mt('Thornton 207', ['Tuesday'], '10:30', '11:50', 'LATE 1', '2026-09-22', '2026-12-04'),
+  mt('Thornton 208', ['Tuesday'], '10:30', '11:50', 'EARLY 1', '2026-09-22', '2026-10-01'),
+];
+check('termOver takes the LATEST end, not the last row\u2019s',
+  !R.termOver(outOfOrder, at('11:00', '2026-11-01')), 'said the term was over on 2026-11-01');
+
+// The "after" row is spread from the last term, and nothing asserted it carried anything.
+const afterRow = R.pickTerm(twoTerms, new Date('2027-09-01T11:00:00-07:00'));
+check('the "after" row names the LAST term, not merely some term',
+  afterRow.state === 'after' && afterRow.term === WIN.term && afterRow.last === WIN.last,
+  JSON.stringify({ state: afterRow.state, term: afterRow.term, last: afterRow.last }));
+
+// Each room's meetings are sorted by start; `next` is found with .find(), which trusts it.
+const unsorted = [
+  mt('Thornton 301', ['Tuesday'], '16:00', '17:00', 'THIRD 1'),
+  mt('Thornton 301', ['Tuesday'], '14:00', '15:00', 'FIRST 1'),
+  mt('Thornton 301', ['Tuesday'], '15:00', '15:50', 'SECOND 1'),
+];
+const u = row(R.status(unsorted, at('11:00')), 'Thornton 301');
+check('the next class is the earliest one, whatever order the file lists them in',
+  u.until === '14:00' && u.course === 'FIRST 1', JSON.stringify([u.until, u.course]));
+
+/* The 10 mutants still surviving are equivalent, and were checked rather than waved
+ * through. rank free 0->1 and busy 2->3, and both literals in `24 * 60`, leave the
+ * order in section 11 byte-identical — the gaps between ranks and the size of the
+ * no-more-classes key are redundant with the tiebreaks that follow (rank soon 1->2 is
+ * NOT equivalent, and section 11 kills it). The rest are min/max loops where `>=`
+ * assigns the value it already holds (L91, L113, L149, L150), a `.find(x => x.s > now)`
+ * whose equal case is already "busy" by the time it runs (L94), and the module.exports
+ * guard. Not chasing 100%: see bin/mutate's header on equivalent mutants. */
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
