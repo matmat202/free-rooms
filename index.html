@@ -180,8 +180,15 @@ footer{color:var(--ink-2);font-size:12px;margin:22px 0 8px;line-height:1.5}
     }).join("") + "</ul>").join("") || `<p class="summary">No rooms match.</p>`;
   }
   ["q", "when", "show"].forEach((id) => $(id).addEventListener("input", () => render(true)));
+  // A backgrounded or frozen tab keeps its last paint, and the interval does not fire
+  // while it is frozen. Measured live 2026-10-26: a page painted on Sunday still read
+  // "No classes meet on weekends" after the clock reached Monday 3am. Re-render on the
+  // return too, under the same "now" gate as the tick.
+  const fresh = () => { if ($("when").value === "now") render(); };
   render();
-  setInterval(() => { if ($("when").value === "now") render(); }, 60000);
+  setInterval(fresh, 60000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) fresh(); });
+  window.addEventListener("pageshow", (e) => { if (e.persisted) fresh(); });
 })();
 </script>
 </body>
