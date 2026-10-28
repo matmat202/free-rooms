@@ -18,7 +18,7 @@ const quad = [37.42752, -122.17025], gates = [37.43001, -122.17330];
 const m = N.metres(quad, gates);
 check('Quad to Gates is ~390 m', m > 360 && m < 420, m.toFixed(0));
 check('zero distance is 1 min, never 0', N.minutes(0) === 1);
-check('800 m is 13 min (1.25 detour at 80 m/min)', N.minutes(800) === 13, N.minutes(800));
+check('800 m is 14 min (1.40 detour at 80 m/min)', N.minutes(800) === 14, N.minutes(800));
 check('label switches to km past 2 km', N.label(2500) === '2.5 km' && N.label(400) === '7 min walk', N.label(400));
 
 console.log('\n2. order');
@@ -55,11 +55,11 @@ check('one degree of longitude shrinks with latitude (the cosine term)',
   Math.abs(N.metres([60, 0], [60, 1]) - 55596.93) < 0.5, N.metres([60, 0], [60, 1]).toFixed(2));
 // The constants are exported so the page can explain itself; assert them, because every
 // `ceil` downstream absorbs a one-unit change in SPEED and hides it.
-check('the model is 1.25 detour at 80 m/min, walkable to 2 km',
-  N.DETOUR === 1.25 && N.SPEED === 80 && N.WALKABLE === 2000,
+check('the model is 1.40 detour at 80 m/min, walkable to 2 km',
+  N.DETOUR === 1.40 && N.SPEED === 80 && N.WALKABLE === 2000,
   `${N.DETOUR}/${N.SPEED}/${N.WALKABLE}`);
 check('exactly 2 km is still a walk, 1 m further is km',
-  N.label(2000) === '32 min walk' && N.label(2001) === '2.0 km' && N.label(1999) === '32 min walk',
+  N.label(2000) === '35 min walk' && N.label(2001) === '2.0 km' && N.label(1999) === '35 min walk',
   `${N.label(1999)} | ${N.label(2000)} | ${N.label(2001)}`);
 
 console.log('\n5. the comparator, with three of everything');

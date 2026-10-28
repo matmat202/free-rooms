@@ -4,10 +4,10 @@
  * projects/rooms-near/build_places.mjs). Main Quad buildings share the Quad's centre,
  * so within the Quad the order is by free rooms, not by metres.
  * Walking minutes use the dining site's model (walk-logic.js): straight-line metres
- * times DETOUR at SPEED m/min, which errs slightly long.
+ * times DETOUR at SPEED m/min, with DETOUR measured on campus paths (projects/walk-detour).
  */
 (function (root) {
-  const DETOUR = 1.25;   // path length over crow-fly distance
+  const DETOUR = 1.40;   // path length over crow-fly distance
   const SPEED = 80;      // m/min, about 4.8 km/h
   const WALKABLE = 2000; // beyond this, show km
 
