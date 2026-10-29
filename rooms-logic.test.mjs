@@ -76,6 +76,7 @@ check('building alias LATHRO 282', R.building('LATHRO 282') === 'Lathrop');
 check('building "Gates100"', R.building('Gates100') === 'Gates', R.building('Gates100'));
 check('building "Hewlett Teaching Center 200"', R.building('Hewlett Teaching Center 200') === 'Hewlett Teaching Center');
 check('isRoom rejects TBA', !R.isRoom('TBA'));
+check('isRoom rejects the medical school placeholder', !R.isRoom('School of Medicine Room'));
 check('isRoom rejects a gym', !R.isRoom('Roble Gymnasium 114'));
 check('isRoom rejects tennis courts', !R.isRoom('West Tennis Courts'));
 check('isRoom rejects the stables', !R.isRoom('Red Barn Stables'));
