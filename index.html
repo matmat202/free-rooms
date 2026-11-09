@@ -169,7 +169,7 @@ footer a{color:var(--accent)}
     const byB = new Map();
     for (const r of rows) { if (!byB.has(r.building)) byB.set(r.building, []); byB.get(r.building).push(r); }
     // Buildings with the most free rooms first; with Near me on, nearest first.
-    let blds = [...byB].sort((a, b) => b[1].filter((r) => r.state === "free").length - a[1].filter((r) => r.state === "free").length || a[0].localeCompare(b[0]));
+    let blds = [...byB].sort((a, b) => b[1].filter((r) => r.state === "free").length - a[1].filter((r) => r.state === "free").length || RoomsLogic.byName(a[0], b[0]));
     blds = here ? NearLogic.order(blds, places, here) : blds.map(([b, rs]) => [b, rs, null]);
     if (nearNote) $("summary").textContent += ` · ${nearNote}`;
     const walk = (b, m) => {

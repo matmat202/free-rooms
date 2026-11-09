@@ -263,6 +263,16 @@ const u = row(R.status(unsorted, at('11:00')), 'Thornton 301');
 check('the next class is the earliest one, whatever order the file lists them in',
   u.until === '14:00' && u.course === 'FIRST 1', JSON.stringify([u.until, u.course]));
 
+// Rooms free for the rest of the day tie on state and time, so they fall to the name
+// tiebreak — which must read numbers as numbers. Four rooms, listed misordered, so a
+// comparator that only swaps neighbours or compares digits as text cannot pass.
+const tied = ['Gates B12', 'Gates B3', '120-101', '120-59'].map((r) => mt(r, ['Friday'], '09:00', '10:00'));
+check('free rooms tied on time list in number order: 120-59 before 120-101, B3 before B12',
+  R.status(tied, at('11:00')).map((r) => r.room).join() === '120-59,120-101,Gates B3,Gates B12',
+  R.status(tied, at('11:00')).map((r) => r.room).join());
+check('byName puts Building 20 between Building 9 and Building 160',
+  ['Building 160', 'Building 20', 'Building 9', 'Building 100'].sort(R.byName).join() === 'Building 9,Building 20,Building 100,Building 160');
+
 /* The 10 mutants still surviving are equivalent, and were checked rather than waved
  * through. rank free 0->1 and busy 2->3, and both literals in `24 * 60`, leave the
  * order in section 11 byte-identical — the gaps between ranks and the size of the
