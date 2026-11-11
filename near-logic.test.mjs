@@ -49,7 +49,7 @@ console.log('\n4. the walking model, by its numbers rather than a range');
 // 'Quad to Gates is ~390 m' passes anywhere in 360..420, so shrinking rad from PI/180
 // to PI/181 — every distance on the page 0.55% short — sailed through it. One degree of
 // latitude pins R * rad outright: 6371000 * PI / 180 = 111194.93 m.
-check('one degree of latitude is 111194.9 m', Math.abs(N.metres([0, 0], [1, 0]) - 111194.93) < 0.5,
+check('one degree of latitude is 111194.9 m', Math.abs(N.metres([0, 0], [1, 0]) - 111194.9266) < 0.005,
   N.metres([0, 0], [1, 0]).toFixed(2));
 check('one degree of longitude shrinks with latitude (the cosine term)',
   Math.abs(N.metres([60, 0], [60, 1]) - 55596.93) < 0.5, N.metres([60, 0], [60, 1]).toFixed(2));
